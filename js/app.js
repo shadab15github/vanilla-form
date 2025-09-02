@@ -1,5 +1,17 @@
+// js/components/VanillaForm.js
 const VanillaForm = {
-  init() {
+  async init() {
+    // Initialize IndexedDB first
+    try {
+      await IndexDBService.init();
+      console.log("IndexedDB ready");
+    } catch (error) {
+      console.error("Failed to initialize IndexedDB:", error);
+    }
+
+    // Initialize form data and create new form entry
+    await FormService.initializeForm();
+
     const app = document.getElementById("app");
     VanillaForm.render(app);
   },
@@ -8,6 +20,10 @@ const VanillaForm = {
     DomUtils.clearElement(container);
 
     const mainContainer = DomUtils.createElement("div", "container");
+
+    // Online/Offline Toggle
+    const onlineToggle = OnlineToggle.create();
+    mainContainer.appendChild(onlineToggle);
 
     // Progress Indicator
     const progressIndicator = VanillaForm.createProgressIndicator();
@@ -212,12 +228,41 @@ const VanillaForm = {
     });
     actions.appendChild(continueButton);
 
+    // Add sync button if offline forms exist and we're online
+    if (FormService.getIsOnline()) {
+      VanillaForm.addSyncButtonIfNeeded(actions);
+    }
+
     return actions;
   },
 
-  handleInputChange(e) {
+  async addSyncButtonIfNeeded(container) {
+    try {
+      const completedForms = await IndexDBService.getCompletedForms();
+      if (completedForms.length > 0) {
+        const syncButton = Button.create({
+          text: `Sync ${completedForms.length} Offline Form(s)`,
+          variant: "success",
+          onClick: async () => {
+            await FormService.syncOfflineForms();
+            // Re-render to update UI
+            const app = document.getElementById("app");
+            VanillaForm.render(app);
+          },
+        });
+        syncButton.style.marginLeft = "auto";
+        container.appendChild(syncButton);
+      }
+    } catch (error) {
+      console.error("Failed to check for offline forms:", error);
+    }
+  },
+
+  async handleInputChange(e) {
     const { name, value } = e.target;
-    FormService.updateFormData(name, value);
+
+    // Update form data in FormService (this will also update IndexedDB)
+    await FormService.updateFormData(name, value);
 
     // Re-render if it affects conditional fields
     if (name === "separateAnnexe") {
@@ -226,24 +271,24 @@ const VanillaForm = {
     }
   },
 
-  handleContinue() {
+  async handleContinue() {
     const currentStep = FormService.getCurrentStep();
     const totalSteps = FormService.getTotalSteps();
 
     if (currentStep < totalSteps) {
-      FormService.setCurrentStep(currentStep + 1);
+      await FormService.setCurrentStep(currentStep + 1);
       const app = document.getElementById("app");
       VanillaForm.render(app);
     } else {
-      FormService.submitForm();
+      await FormService.submitForm();
     }
   },
 
-  handleBack() {
+  async handleBack() {
     const currentStep = FormService.getCurrentStep();
 
     if (currentStep > 1) {
-      FormService.setCurrentStep(currentStep - 1);
+      await FormService.setCurrentStep(currentStep - 1);
       const app = document.getElementById("app");
       VanillaForm.render(app);
     }
