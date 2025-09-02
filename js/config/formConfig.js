@@ -6,6 +6,28 @@ const formConfig = {
       subtitle: "",
       sections: [
         {
+          sectionLabel: "Insurance Type",
+          rows: [
+            {
+              fields: [
+                {
+                  type: "select",
+                  name: "type",
+                  placeholder: "Type",
+                  required: true,
+                  width: "100%",
+                  options: [
+                    { value: "car", label: "Car" },
+                    { value: "motorcycle", label: "Motorcycle" },
+                    { value: "van", label: "Van" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+
+        {
           sectionLabel: "Customer",
           rows: [
             {
