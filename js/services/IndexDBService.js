@@ -235,7 +235,7 @@ const IndexDBService = {
     });
   },
 
-  // Get incomplete forms (for debugging/admin purposes)
+  // Get incomplete forms (for debugging/admin purposes and session resuming)
   async getIncompleteForms() {
     if (!IndexDBService.db) {
       await IndexDBService.init();
@@ -247,11 +247,16 @@ const IndexDBService = {
         "readonly"
       );
       const store = transaction.objectStore(IndexDBService.storeName);
-      const index = store.index("isComplete");
-      const request = index.getAll(false);
+
+      // Get all forms and filter for incomplete ones
+      const request = store.getAll();
 
       request.onsuccess = () => {
-        resolve(request.result);
+        const allForms = request.result;
+        const incompleteForms = allForms.filter(
+          (form) => form.isComplete === false
+        );
+        resolve(incompleteForms);
       };
 
       request.onerror = () => {
@@ -272,8 +277,58 @@ const IndexDBService = {
         "readonly"
       );
       const store = transaction.objectStore(IndexDBService.storeName);
-      const index = store.index("isComplete");
-      const request = index.getAll(true);
+
+      // Get all forms and filter for completed ones
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const allForms = request.result;
+        const completedForms = allForms.filter(
+          (form) => form.isComplete === true
+        );
+        resolve(completedForms);
+      };
+
+      request.onerror = () => {
+        reject(request.error);
+      };
+    });
+  },
+
+  // Get the latest incomplete form (for session resuming)
+  async getLatestIncompleteForm() {
+    if (!IndexDBService.db) {
+      await IndexDBService.init();
+    }
+
+    const incompleteForms = await IndexDBService.getIncompleteForms();
+
+    if (!incompleteForms || incompleteForms.length === 0) {
+      return null;
+    }
+
+    // Sort by timestamp (most recent first)
+    const sortedForms = incompleteForms.sort(
+      (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+    );
+
+    return sortedForms[0];
+  },
+
+  // Get forms by session ID
+  async getFormsBySessionId(sessionId) {
+    if (!IndexDBService.db) {
+      await IndexDBService.init();
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = IndexDBService.db.transaction(
+        [IndexDBService.storeName],
+        "readonly"
+      );
+      const store = transaction.objectStore(IndexDBService.storeName);
+      const index = store.index("sessionId");
+      const request = index.getAll(sessionId);
 
       request.onsuccess = () => {
         resolve(request.result);

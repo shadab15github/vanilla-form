@@ -11,8 +11,87 @@ const FormService = {
     return `form_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   },
 
-  // Initialize form with default values and create new entry in IndexedDB
+  // Initialize form - either resume existing incomplete session or create new one
   async initializeForm() {
+    try {
+      // Check for existing incomplete form session
+      const incompleteForms = await IndexDBService.getIncompleteForms();
+
+      if (incompleteForms && incompleteForms.length > 0) {
+        // Sort by timestamp to get the most recent incomplete form
+        const sortedForms = incompleteForms.sort(
+          (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+        );
+
+        const latestIncompleteForm = sortedForms[0];
+
+        // Resume the existing session
+        console.log(
+          "Resuming existing session:",
+          latestIncompleteForm.sessionId
+        );
+
+        FormService.currentFormId = latestIncompleteForm.id;
+        FormService.sessionId = latestIncompleteForm.sessionId;
+        FormService.formData = latestIncompleteForm.formData || {
+          separateAnnexe: "no",
+          caravanPrice: "",
+          annexePrice: "",
+          purchasePrice: "",
+        };
+        FormService.currentStep = latestIncompleteForm.step || 1;
+
+        console.log("Resumed form with ID:", FormService.currentFormId);
+        console.log("Resumed at step:", FormService.currentStep);
+        console.log("Resumed form data:", FormService.formData);
+      } else {
+        // No incomplete forms found, create a new session
+        console.log("No incomplete forms found, creating new session");
+
+        FormService.formData = {
+          separateAnnexe: "no",
+          caravanPrice: "",
+          annexePrice: "",
+          purchasePrice: "",
+        };
+        FormService.currentStep = 1;
+        FormService.currentFormId = null;
+        FormService.sessionId = FormService.generateSessionId();
+
+        // Create a new form entry in IndexedDB
+        const formId = await IndexDBService.createForm(FormService.sessionId);
+        FormService.currentFormId = formId;
+        console.log("New form initialized with ID:", formId);
+      }
+    } catch (error) {
+      console.error("Failed to initialize form:", error);
+
+      // Fallback: create a new form if there's an error
+      FormService.formData = {
+        separateAnnexe: "no",
+        caravanPrice: "",
+        annexePrice: "",
+        purchasePrice: "",
+      };
+      FormService.currentStep = 1;
+      FormService.currentFormId = null;
+      FormService.sessionId = FormService.generateSessionId();
+
+      try {
+        const formId = await IndexDBService.createForm(FormService.sessionId);
+        FormService.currentFormId = formId;
+        console.log("New form initialized (fallback) with ID:", formId);
+      } catch (fallbackError) {
+        console.error(
+          "Failed to create form in IndexedDB (fallback):",
+          fallbackError
+        );
+      }
+    }
+  },
+
+  // Reset form and create new session (only called after successful submission)
+  async resetAndCreateNewSession() {
     FormService.formData = {
       separateAnnexe: "no",
       caravanPrice: "",
@@ -27,9 +106,9 @@ const FormService = {
     try {
       const formId = await IndexDBService.createForm(FormService.sessionId);
       FormService.currentFormId = formId;
-      console.log("New form initialized with ID:", formId);
+      console.log("New form session created with ID:", formId);
     } catch (error) {
-      console.error("Failed to create form in IndexedDB:", error);
+      console.error("Failed to create new form session in IndexedDB:", error);
     }
   },
 
@@ -57,7 +136,7 @@ const FormService = {
           FormService.currentFormId,
           FormService.formData,
           FormService.currentStep,
-          false
+          false // not complete yet
         );
       } catch (error) {
         console.error("Failed to update form in IndexedDB:", error);
@@ -116,22 +195,43 @@ const FormService = {
     console.log("Form submitted:", FormService.formData);
 
     if (FormService.isOnline) {
-      // Online mode: Submit to server and remove from IndexedDB
+      // Online mode: Submit to server and mark as complete
       try {
+        // Mark as complete before submission
+        if (FormService.currentFormId) {
+          await IndexDBService.updateForm(
+            FormService.currentFormId,
+            FormService.formData,
+            FormService.currentStep,
+            true // mark as complete
+          );
+        }
+
         // Simulate API call
         await FormService.submitToServer(FormService.formData);
 
-        // Remove from IndexedDB after successful submission
+        // Delete from IndexedDB after successful submission
         if (FormService.currentFormId) {
           await IndexDBService.deleteForm(FormService.currentFormId);
         }
 
         alert("Form submitted successfully (Online)!");
 
-        // Clear form and initialize a new one
+        // Create a new session for the next form
         await FormService.clearAndResetForm();
       } catch (error) {
         console.error("Failed to submit form online:", error);
+
+        // Revert completion status if submission failed
+        if (FormService.currentFormId) {
+          await IndexDBService.updateForm(
+            FormService.currentFormId,
+            FormService.formData,
+            FormService.currentStep,
+            false // revert to incomplete
+          );
+        }
+
         alert("Failed to submit form. Please try again.");
       }
     } else {
@@ -150,7 +250,7 @@ const FormService = {
           "Form saved successfully (Offline)! It will be submitted when you're back online."
         );
 
-        // Clear form and initialize a new one for next entry
+        // Create a new session for the next form
         await FormService.clearAndResetForm();
       } catch (error) {
         console.error("Failed to save form offline:", error);
@@ -172,8 +272,8 @@ const FormService = {
 
   // Clear current form and prepare for new entry
   async clearAndResetForm() {
-    // Initialize a new form (creates new IndexedDB entry)
-    await FormService.initializeForm();
+    // Reset and create a new session
+    await FormService.resetAndCreateNewSession();
 
     // Re-render the form
     const app = document.getElementById("app");

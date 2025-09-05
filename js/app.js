@@ -9,7 +9,8 @@ const VanillaForm = {
       console.error("Failed to initialize IndexedDB:", error);
     }
 
-    // Initialize form data and create new form entry
+    // Initialize form data - this will either resume an existing incomplete session
+    // or create a new form entry
     await FormService.initializeForm();
 
     const app = document.getElementById("app");
@@ -20,6 +21,21 @@ const VanillaForm = {
     DomUtils.clearElement(container);
 
     const mainContainer = DomUtils.createElement("div", "container");
+
+    // Add session info display for debugging (optional - remove in production)
+    if (FormService.sessionId) {
+      const sessionInfo = DomUtils.createElement("div", "session-info", {
+        innerHTML: `<small>Session: ${FormService.sessionId} | Form ID: ${
+          FormService.currentFormId
+        } | Step: ${FormService.getCurrentStep()}</small>`,
+      });
+      sessionInfo.style.padding = "10px";
+      sessionInfo.style.backgroundColor = "#f0f0f0";
+      sessionInfo.style.marginBottom = "20px";
+      sessionInfo.style.fontSize = "12px";
+      sessionInfo.style.color = "#666";
+      mainContainer.appendChild(sessionInfo);
+    }
 
     // Online/Offline Toggle
     const onlineToggle = OnlineToggle.create();
@@ -111,38 +127,44 @@ const VanillaForm = {
     const formContent = DomUtils.createElement("div", "form-content");
     const currentStepConfig = FormService.getCurrentStepConfig();
 
-    currentStepConfig.sections.forEach((section) => {
-      const sectionDiv = DomUtils.createElement("div", "form-section");
+    if (currentStepConfig) {
+      currentStepConfig.sections.forEach((section) => {
+        const sectionDiv = DomUtils.createElement("div", "form-section");
 
-      if (section.sectionLabel) {
-        const label = DomUtils.createElement("label", "section-label");
-        label.textContent = section.sectionLabel;
+        if (section.sectionLabel) {
+          const label = DomUtils.createElement("label", "section-label");
+          label.textContent = section.sectionLabel;
 
-        if (section.sectionLabel === "Customer") {
-          const asterisk = DomUtils.createElement("span", "required-asterisk", {
-            textContent: "*",
-          });
-          label.appendChild(asterisk);
+          if (section.sectionLabel === "Customer") {
+            const asterisk = DomUtils.createElement(
+              "span",
+              "required-asterisk",
+              {
+                textContent: "*",
+              }
+            );
+            label.appendChild(asterisk);
+          }
+
+          sectionDiv.appendChild(label);
         }
 
-        sectionDiv.appendChild(label);
-      }
+        section.rows.forEach((row) => {
+          const rowDiv = DomUtils.createElement("div", "form-row");
 
-      section.rows.forEach((row) => {
-        const rowDiv = DomUtils.createElement("div", "form-row");
+          row.fields.forEach((field) => {
+            const fieldElement = VanillaForm.renderField(field);
+            if (fieldElement) {
+              rowDiv.appendChild(fieldElement);
+            }
+          });
 
-        row.fields.forEach((field) => {
-          const fieldElement = VanillaForm.renderField(field);
-          if (fieldElement) {
-            rowDiv.appendChild(fieldElement);
-          }
+          sectionDiv.appendChild(rowDiv);
         });
 
-        sectionDiv.appendChild(rowDiv);
+        formContent.appendChild(sectionDiv);
       });
-
-      formContent.appendChild(sectionDiv);
-    });
+    }
 
     formContainer.appendChild(formContent);
 
